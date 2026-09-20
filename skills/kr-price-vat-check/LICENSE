@@ -1,0 +1,29 @@
+MIT License
+
+Copyright (c) 2026 HIPC Hermes Lab (sinhs0301-prog/HIPC-AI-)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+부가 안내(법적 효력 없는 설명):
+- 이 패키지(kr-price-vat-check v2)는 클로드(1번 전용)가 직접 작성했으며 타인 저작물을 포함하지 않습니다.
+- 포함된 vat_check.py는 Python 표준 라이브러리만 사용합니다.
+- 이 스킬은 부가가치세 표기·계산 점검을 돕는 보조 도구이며 세무·법률 자문이 아닙니다.
+  실제 신고·표시 의무는 이용자가 관련 법령과 세무 전문가를 통해 확인해야 합니다.
