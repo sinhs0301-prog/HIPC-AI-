@@ -1,0 +1,30 @@
+MIT License
+
+Copyright (c) 2026 HIPC AI Lab (sinhs0301) — kr-business-day skill
+
+이 스킬(SKILL.md, kr_business_day.py, README/LICENSE 포함)은 본 팀이 직접 작성했다.
+외부 저작물을 복사하지 않았다. 공휴일 날짜 자체는 대한민국 관보·공공 공고로
+공표된 사실 정보이며 저작권 보호 대상이 아니다. 표 구성과 코드는 직접 작성한 것이다.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+추가 고지(보증 아님):
+- 내장 공휴일 표의 적용 범위는 2026-01-01 ~ 2027-12-31뿐이다.
+- 임시공휴일 신규 지정 시 표와 실제가 달라질 수 있다.
+- 세금 신고·납부 등 법적 기한 판단에 단독 근거로 사용하지 말 것.
