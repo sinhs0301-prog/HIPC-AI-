@@ -53,6 +53,7 @@ def main():
             (2500, 90, "usd", Decimal("110.96"), Decimal("30")),
             (5000, 90, "uk", Decimal("163.36"), Decimal("70")),
             (500, 90, "uk", Decimal("16.34"), Decimal("40")),
+            (5000, 30, "uk", Decimal("54.45"), Decimal("0")),
         ]
         all_pass = True
         for amt, days, cur, exp_int, exp_fee in cases:
@@ -68,7 +69,7 @@ def main():
             if not (ok_i and ok_f):
                 all_pass = False
             print(f"{status}: {amt}x{days}d {cur} -> int={actual_int} fee={actual_fee} (expected int={exp_int} fee={exp_fee})")
-        print("4/4 passed" if all_pass else "some tests failed")
+        print("5/5 passed" if all_pass else "some tests failed")
         return 0 if all_pass else 1
 
     if args.amount is None or args.currency is None or args.days_past is None:
@@ -90,7 +91,7 @@ def main():
             print(f"USD total due: {total}")
     else:
         interest = round2(gbp_interest(args.amount, args.days_past))
-        fee = Decimal(str(args.fee if args.fee is not None else gbp_fee(args.amount, args.days_past)))
+        fee = Decimal(str(args.fee)) if args.fee is not None else gbp_fee(args.amount, args.days_past)
         total = round2(Decimal(str(args.amount)) + interest + fee)
         if args.verbose:
             print(f"UK interest path: {args.amount} * 0.1325 * {args.days_past} / 365")

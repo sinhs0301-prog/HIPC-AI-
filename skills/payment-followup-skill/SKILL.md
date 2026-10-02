@@ -39,14 +39,14 @@ If the dispute is open, follow the dispute path first, not the escalation ladder
 
 For USD: amount × annual_rate × days / 365, rounded to cents. Default rate is 18%/yr when no contract rate is given.
 
-For GBP: amount × (Bank of England base rate + 8%) × days / 365, plus a fixed compensation fee (<GBP 1000 → £40, 1000..<10000 → £70, >=10000 → £100). Base rate defaults to 5.25%.
+For GBP: amount × (Bank of England base rate + 8%) × days / 365, plus a fixed compensation fee at 45+ days past due (<GBP 1000 → £40, 1000..<10000 → £70, >=10000 → £100). Base rate defaults to 5.25%.
 
 These formulas match the team-reviewed `scripts/payment_calculator.py`. Run `python3 scripts/payment_calculator.py --selftest` to reproduce the documented coordinates.
 
 ## 4. Quote follow-up tracker
 
-Use `scripts/quote_followup_tracker_demo.csv` as the shape. Columns: quote_id, client, amount, sent_date, follow_up_1, follow_up_2, follow_up_3, status. Follow-ups are scheduled on day 7, 14, 21, 30 after the quote is sent; `closed` means accepted or rejected, `hold` means on pause.
+Track each quote in your own spreadsheet or CSV. Recommended columns: quote_id, client, amount, sent_date, follow_up_1, follow_up_2, follow_up_3, status. Use `closed` for accepted or rejected, and `hold` for paused quotes.
 
 ## 5. Evidence and review
 
-Do not publish or credit any claim unless a reviewed output or an actual customer confirmation exists. Do not add links or promises that the skill cannot verify.
+Do not publish or credit any claim unless a reviewed output or an actual customer confirmation exists. Do not add links or promises that cannot be verified. Review drafts with the team before shipping.
