@@ -1,0 +1,28 @@
+From 5ecb98ae86823ee9fa0f6ffdf856f3655a560777 Mon Sep 17 00:00:00 2001
+From: HIPC AI Lab <noreply@example.invalid>
+Date: Tue, 6 Oct 2026 22:36:55 +0900
+Subject: [PATCH 2/2] convert: note the q4 proposal row-count constraint in
+ --proposal-ids help
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+---
+ tools/convert/__main__.py | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/tools/convert/__main__.py b/tools/convert/__main__.py
+index 46265c5..8e6fee7 100644
+--- a/tools/convert/__main__.py
++++ b/tools/convert/__main__.py
+@@ -127,7 +127,8 @@ def main(argv=None):
+         "--proposal-ids",
+         type=Path,
+         help="explicit proposal vocabulary (.npy or text token IDs); implies --proposal "
+-        "and replaces the ranking shortlist, e.g. a language-specific draft vocabulary",
++        "and replaces the ranking shortlist, e.g. a language-specific draft vocabulary; "
++        "the row count must match a q4 proposal kernel shape (131072 for hidden 5120)",
+     )
+     parser.add_argument("--ranking", type=Path, default=DEFAULT_RANKING)
+     parser.add_argument("--name", help="public instance name saved in metadata")
+-- 
+2.53.0
+

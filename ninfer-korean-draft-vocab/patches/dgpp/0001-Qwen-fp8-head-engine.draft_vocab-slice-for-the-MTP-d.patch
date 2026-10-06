@@ -1,0 +1,204 @@
+From c5613233f29899ebc5da26def057d699108a0023 Mon Sep 17 00:00:00 2001
+From: HIPC AI Lab <noreply@example.invalid>
+Date: Tue, 6 Oct 2026 16:23:14 +0900
+Subject: [PATCH] Qwen fp8 head: engine.draft_vocab slice for the MTP draft
+ under dense_weights fp8
+
+---
+ CMakeLists.txt              |  1 +
+ src/kernels/draft_slice.cu  | 27 +++++++++++++++++++++++++++
+ src/kernels/draft_slice.hpp |  9 +++++++++
+ src/models/qwen/forward.cpp | 17 +++++++++++++++++
+ src/models/qwen/forward.hpp |  1 +
+ src/models/qwen/loader.cpp  | 35 +++++++++++++++++++++++++++++++++++
+ src/models/qwen/loader.hpp  |  1 +
+ 7 files changed, 91 insertions(+)
+ create mode 100644 src/kernels/draft_slice.cu
+ create mode 100644 src/kernels/draft_slice.hpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index af9e57c..079b46c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -171,6 +171,7 @@ add_library(dgpp_kernels STATIC
+   src/kernels/packq_gemv.cu
+   src/kernels/packq_gemm.cu
+   src/kernels/packq_head.cu
++  src/kernels/draft_slice.cu
+   src/kernels/scale_gemm.cu
+   src/kernels/bf16_gemv.cu
+   src/kernels/bf12_gemv.cu
+diff --git a/src/kernels/draft_slice.cu b/src/kernels/draft_slice.cu
+new file mode 100644
+index 0000000..d7f80bd
+--- /dev/null
++++ b/src/kernels/draft_slice.cu
+@@ -0,0 +1,27 @@
++#include "kernels/draft_slice.hpp"
++#include <cmath>
++
++namespace dgpp {
++namespace {
++__global__ void draft_fill_kernel(float* out, size_t total) {
++  for (size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x; i < total;
++       i += static_cast<size_t>(gridDim.x) * blockDim.x)
++    out[i] = -INFINITY;
++}
++__global__ void draft_scatter_kernel(const float* slice, const int32_t* ids, int n, int rows, float* out, int V) {
++  const size_t total = static_cast<size_t>(n) * rows;
++  for (size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x; i < total;
++       i += static_cast<size_t>(gridDim.x) * blockDim.x) {
++    const size_t r = i / n, j = i % n;
++    out[r * static_cast<size_t>(V) + ids[j]] = slice[i];
++  }
++}
++}  // namespace
++
++void launch_draft_slice_scatter(const float* slice, const int32_t* ids, int n, int rows, float* out, int V,
++                                cudaStream_t stream) {
++  if (rows <= 0) return;
++  draft_fill_kernel<<<192, 256, 0, stream>>>(out, static_cast<size_t>(rows) * V);
++  draft_scatter_kernel<<<192, 256, 0, stream>>>(slice, ids, n, rows, out, V);
++}
++}  // namespace dgpp
+diff --git a/src/kernels/draft_slice.hpp b/src/kernels/draft_slice.hpp
+new file mode 100644
+index 0000000..281754e
+--- /dev/null
++++ b/src/kernels/draft_slice.hpp
+@@ -0,0 +1,9 @@
++#pragma once
++#include <cstdint>
++#include <cuda_runtime.h>
++
++namespace dgpp {
++// out[r][v] = -inf for every v, then out[r][ids[j]] = slice[r][j] (row stride V).
++void launch_draft_slice_scatter(const float* slice, const int32_t* ids, int n, int rows, float* out, int V,
++                                cudaStream_t stream);
++}  // namespace dgpp
+diff --git a/src/models/qwen/forward.cpp b/src/models/qwen/forward.cpp
+index aab0a93..d38ba9a 100644
+--- a/src/models/qwen/forward.cpp
++++ b/src/models/qwen/forward.cpp
+@@ -1,3 +1,4 @@
++#include "kernels/draft_slice.hpp"
+ #include "models/qwen/forward.hpp"
+ #include "models/qwen/image_stage_plan.hpp"
+ 
+@@ -236,6 +237,9 @@ QwenModel::QwenModel(const QwenTextConfig& cfg, const std::string& checkpoint_di
+     head_cand_ = dev_alloc<int32_t>(static_cast<size_t>(lm_vocab_count_));
+     head_cand_count_ = dev_alloc<int32_t>(1);
+   }
++  if (globals_.draft_head_fp8.payload != nullptr)
++    draft_slice_logits_ = dev_alloc<float>(static_cast<size_t>(std::max(max_decode_rows_, 1)) *
++                                           static_cast<size_t>(globals_.draft_vocab_count));
+   if (const char* e = std::getenv("DGPP_QWEN_HEAD_DUMP"); e != nullptr && e[0] != '\0') {
+     head_dump_path_ = e;
+     const size_t slot = static_cast<size_t>(max_decode_rows_) * static_cast<size_t>(cfg_.hidden_size);
+@@ -409,6 +413,7 @@ QwenModel::~QwenModel() {
+   cudaFree(head_lo_);
+   cudaFree(head_cand_);
+   cudaFree(head_cand_count_);
++  cudaFree(draft_slice_logits_);
+   cudaFree(head_dump_meta_);
+   cudaFree(spec_ring_);
+   cudaFree(r_);
+@@ -565,6 +570,18 @@ void QwenModel::lm_head_logits(const uint16_t* hidden, int rows, cudaStream_t st
+     }
+     return;
+   }
++  if (globals_.lm_head_fp8.payload && head_dump_site_ == 1 && draft_slice_logits_ != nullptr &&
++      rows <= max_decode_rows_ && !last_row_only && compact_row < 0) {
++    // The draft's call over the vocabulary slice (engine.draft_vocab): the
++    // slice's logits, then scattered to their ids over a -inf row.
++    const int n = globals_.draft_vocab_count;
++    launch_scale_gemm_f32(hidden, static_cast<size_t>(H), globals_.draft_head_fp8.payload,
++                          globals_.draft_head_fp8.scales, draft_slice_logits_, rows, n, H, stream,
++                          static_cast<size_t>(n), fp8_head_mma_ ? dense_gemv_rows() + 1 : 0);
++    launch_draft_slice_scatter(draft_slice_logits_, globals_.draft_vocab_ids, n, rows,
++                               logits_ + static_cast<size_t>(output_row) * lm_vocab_count_, lm_vocab_count_, stream);
++    return;
++  }
+   if (globals_.lm_head_fp8.payload)
+     launch_scale_gemm_f32(hidden, static_cast<size_t>(H), globals_.lm_head_fp8.payload,
+                           globals_.lm_head_fp8.scales, logits_ + static_cast<size_t>(output_row) * lm_vocab_count_, rows, lm_vocab_count_, H, stream,
+diff --git a/src/models/qwen/forward.hpp b/src/models/qwen/forward.hpp
+index 84aa2d5..00171af 100644
+--- a/src/models/qwen/forward.hpp
++++ b/src/models/qwen/forward.hpp
+@@ -301,6 +301,7 @@ class QwenModel : public SessionModel<QwenModel> {
+   int32_t* head_lo_ = nullptr;       // [4] the best lower bounds (ordered ints)
+   int32_t* head_cand_ = nullptr;     // [V] the candidate rows, compacted
+   int32_t* head_cand_count_ = nullptr;
++  float* draft_slice_logits_ = nullptr;  // [max_decode_rows][draft_vocab_count] the fp8 draft slice logits
+   std::string head_dump_path_;
+   std::vector<uint16_t> head_dump_host_;
+   std::vector<uint8_t> head_dump_meta_host_;
+diff --git a/src/models/qwen/loader.cpp b/src/models/qwen/loader.cpp
+index 2500308..e2f8fac 100644
+--- a/src/models/qwen/loader.cpp
++++ b/src/models/qwen/loader.cpp
+@@ -872,6 +872,10 @@ size_t QwenLoaderFamily::globals_bytes(const QwenTextConfig& cfg, int rank, int
+     }
+   } else {
+     b += dense(head_rows, H);
++    if (g_dense_weights_fp8 && !g_draft_vocab_ids.empty()) {  // the fp8 draft slice: codes, scales, ids
++      const size_t n = g_draft_vocab_ids.size();
++      b += dense(n, H) + align_up_256(n * 4);
++    }
+   }
+   b += align_up_256(W * 2) + dense(r, W) + dense(W, r);                             // mixer
+   if (cfg.mtp_layer() >= 0) {
+@@ -1051,6 +1055,37 @@ void QwenLoaderFamily::build_globals(const QwenTextConfig& cfg_, const QwenLocal
+                                  globals_bump_->host(const_cast<uint8_t*>(q.payload)),
+                                  globals_bump_->host(const_cast<float*>(q.scales)));
+       globals_.lm_head_fp8 = q;
++      if (!g_draft_vocab_ids.empty()) {
++        // The draft's vocabulary slice under the FP8 head: the set's BF16
++        // rows gathered and encoded as their own block-128 matrix (the draft
++        // only proposes; the target's full head verifies every token).
++        const std::vector<int32_t>& ids = g_draft_vocab_ids;
++        for (int32_t id : ids)
++          if (id < begin || id >= begin + count)
++            throw std::runtime_error("qwen loader: engine.draft_vocab holds an id outside this rank's vocab slice");
++        const size_t n_slice = ids.size();
++        std::vector<uint16_t> rows_bf16(n_slice * static_cast<size_t>(H));
++        const uint16_t* src = static_cast<const uint16_t*>(t.data);
++        for (size_t r = 0; r < n_slice; ++r)
++          std::memcpy(rows_bf16.data() + r * static_cast<size_t>(H), src + static_cast<size_t>(ids[r]) * H,
++                      static_cast<size_t>(H) * 2);
++        GlmQuantMatrix d;
++        d.rows = static_cast<int64_t>(n_slice);
++        d.cols = H;
++        d.payload = static_cast<const uint8_t*>(globals_bump_->alloc(n_slice * static_cast<size_t>(H)));
++        d.scales = static_cast<const float*>(globals_bump_->alloc(
++            static_cast<size_t>(fp8_quant::scale_rows(static_cast<int64_t>(n_slice))) * fp8_quant::scale_cols(H) * 4));
++        fp8_quant::encode_block128(rows_bf16.data(), static_cast<size_t>(H), static_cast<int64_t>(n_slice), H,
++                                   globals_bump_->host(const_cast<uint8_t*>(d.payload)),
++                                   globals_bump_->host(const_cast<float*>(d.scales)));
++        const int32_t* dev_ids = static_cast<const int32_t*>(globals_bump_->alloc(n_slice * 4));
++        std::memcpy(globals_bump_->host(const_cast<int32_t*>(dev_ids)), ids.data(), n_slice * 4);
++        globals_.draft_head_fp8 = d;
++        globals_.draft_vocab_ids = dev_ids;
++        globals_.draft_vocab_count = static_cast<int>(n_slice);
++        DGPP_LOG_INFO("qwen loader: fp8 draft vocabulary slice: {} of {} head rows ({:.0f} MiB)", n_slice, count,
++                      static_cast<double>(n_slice * static_cast<size_t>(H)) / (1 << 20));
++      }
+     } else {
+       uint16_t* dst = static_cast<uint16_t*>(globals_bump_->alloc(static_cast<size_t>(count) * row_bytes));
+       std::memcpy(globals_bump_->host(dst),
+diff --git a/src/models/qwen/loader.hpp b/src/models/qwen/loader.hpp
+index ea565be..d3e7fbf 100644
+--- a/src/models/qwen/loader.hpp
++++ b/src/models/qwen/loader.hpp
+@@ -169,6 +169,7 @@ struct QwenGlobalsResident {
+   // The opt-in draft vocabulary slice (engine.draft_vocab): the head rows
+   // of the set, in the plane layout, and the set's ids (device, ascending).
+   GlmPackedMatrix draft_head_packed;
++  GlmQuantMatrix draft_head_fp8;      // the same slice under dense_weights fp8 (block-128 FP8 of the BF16 rows)
+   const int32_t* draft_vocab_ids = nullptr;
+   int draft_vocab_count = 0;
+   int lm_vocab_begin = 0;
+-- 
+2.43.0
+
